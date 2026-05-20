@@ -1,0 +1,1977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Cutting Dashboard</title>
+<script>
+/* XLSX library loader with multiple CDN fallbacks.
+   If one CDN is blocked/slow, the next is tried. The dashboard UI
+   itself does NOT depend on XLSX — only Excel upload/download does. */
+(function(){
+  var cdns = [
+    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+    'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+  ];
+  var i = 0;
+  function tryLoad(){
+    if (i >= cdns.length) {
+      window.__xlsxFailed = true;
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = cdns[i];
+    s.onload = function(){ window.__xlsxLoaded = true; };
+    s.onerror = function(){ i++; tryLoad(); };
+    document.head.appendChild(s);
+  }
+  tryLoad();
+})();
+</script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: rgba(220,38,38,0.1); }
+  body { margin: 0; font-family: -apple-system, sans-serif; background: #f5f7fa; color: #1a202c; font-size: 15px; }
+  .header { background: linear-gradient(135deg, #dc2626, #ea580c); color: white; padding: 16px; }
+  .header h1 { margin: 0; font-size: 18px; }
+  .header p { margin: 4px 0 0; font-size: 12px; opacity: 0.9; }
+  .nav { background: white; border-bottom: 1px solid #e2e8f0; display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .nav button { padding: 14px 16px; background: none; border: none; border-bottom: 3px solid transparent; font-size: 14px; color: #64748b; font-weight: 500; white-space: nowrap; cursor: pointer; }
+  .nav button.active { color: #dc2626; border-bottom-color: #dc2626; }
+  .container { padding: 14px; max-width: 1400px; margin: 0 auto; }
+  .card { background: white; border-radius: 10px; padding: 14px; margin-bottom: 12px; border: 1px solid #e2e8f0; }
+  .card-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+  .btn { padding: 11px 14px; border-radius: 8px; border: none; font-size: 14px; font-weight: 500; margin: 4px 4px 4px 0; cursor: pointer; min-height: 44px; }
+  .btn-primary { background: #dc2626; color: white; }
+  .btn-success { background: #10b981; color: white; }
+  .btn-warning { background: #f59e0b; color: white; }
+  .btn-danger { background: #ef4444; color: white; }
+  .btn-secondary { background: #e2e8f0; color: #1e293b; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .stat { background: white; border-radius: 10px; padding: 12px; border-left: 4px solid #dc2626; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; }
+  .stat .label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+  .stat .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+  .stat.green { border-left-color: #10b981; }
+  .stat.orange { border-left-color: #f59e0b; }
+  .stat.blue { border-left-color: #3b82f6; }
+  .stat.purple { border-left-color: #8b5cf6; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+  th { background: #f8fafc; font-weight: 600; font-size: 10px; text-transform: uppercase; color: #475569; position: sticky; top: 0; text-align: center; }
+  td.num { text-align: center; font-variant-numeric: tabular-nums; }
+  th.num { text-align: center; }
+  tr:hover td { background: #f8fafc; }
+  .tablewrap { overflow-x: auto; max-height: 500px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; -webkit-overflow-scrolling: touch; }
+  .upload { border: 2px dashed #cbd5e1; border-radius: 10px; padding: 28px; text-align: center; background: #f8fafc; cursor: pointer; }
+  .upload:hover { border-color: #dc2626; background: #fef2f2; }
+  input[type=file] { display: none; }
+  input[type=number], input[type=text] { width: 100%; padding: 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 5px; color: #475569; }
+  .alert { padding: 11px; border-radius: 8px; margin: 10px 0; font-size: 13px; }
+  .alert-ok { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+  .alert-err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .alert-info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+  .alert-warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+  .empty { text-align: center; padding: 40px 14px; color: #94a3b8; }
+  .empty .icon { font-size: 48px; margin-bottom: 12px; }
+  .status-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+  .status-loaded { background: #d1fae5; color: #065f46; }
+  .status-empty { background: #fee2e2; color: #991b1b; }
+  .search-box { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
+
+  /* Multi-select button */
+  .ms-btn {
+    width: 100%; min-height: 44px; padding: 10px 12px;
+    border: 1px solid #cbd5e1; border-radius: 8px; background: white;
+    font-size: 14px; text-align: left; cursor: pointer;
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  }
+  .ms-btn:active { background: #f1f5f9; }
+  .ms-placeholder { color: #94a3b8; }
+  .ms-chip { background: #dc2626; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ms-summary { background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:4px; font-size:12px; font-weight:500; }
+  .ms-arrow { margin-left:auto; color:#94a3b8; font-size:11px; }
+
+  /* Modal */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; display:none; align-items:center; justify-content:center; padding:14px; }
+  .modal-bg.show { display:flex; }
+  .modal { background:white; border-radius:14px; width:100%; max-width:500px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; }
+  .modal-head { padding:14px; border-bottom:1px solid #e2e8f0; background:#f8fafc; display:flex; align-items:center; gap:10px; }
+  .modal-title { font-size:16px; font-weight:600; flex:1; }
+  .modal-close { background:#e2e8f0; border:none; border-radius:6px; padding:6px 12px; font-size:18px; cursor:pointer; line-height:1; min-width:36px; min-height:36px; }
+  .modal-search { padding:10px 14px; border-bottom:1px solid #e2e8f0; }
+  .modal-search input { width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:6px; font-size:15px; outline:none; }
+  .modal-tools { display:flex; gap:14px; padding:8px 14px; border-bottom:1px solid #e2e8f0; background:#f8fafc; font-size:13px; align-items:center; }
+  .modal-tools a { color:#dc2626; cursor:pointer; font-weight:500; padding:4px 0; }
+  .modal-tools .count { margin-left:auto; color:#64748b; }
+  .modal-list { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .modal-opt { padding:12px 14px; border-bottom:1px solid #f1f5f9; display:flex; align-items:center; gap:10px; cursor:pointer; min-height:44px; }
+  .modal-opt:active { background:#f1f5f9; }
+  .modal-opt.sel { background:#fef2f2; }
+  .modal-opt input { width:20px; height:20px; cursor:pointer; }
+  .modal-opt span { font-size:14px; flex:1; }
+  .modal-empty { padding:30px; text-align:center; color:#94a3b8; font-size:14px; }
+  .modal-foot { padding:12px 14px; border-top:1px solid #e2e8f0; background:#f8fafc; display:flex; gap:8px; }
+  .modal-foot .btn { flex:1; margin:0; }
+  @media (min-width: 700px) {
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>✂️ Cutting Dashboard</h1>
+  <p>Production planning · Sale + Stock + Pending Orders</p>
+</div>
+
+<div class="nav">
+  <button class="active" data-tab="overview">Overview</button>
+  <button data-tab="sale">📥 1. Sale Data</button>
+  <button data-tab="stock">📦 2. Stock Data</button>
+  <button data-tab="pending">📋 3. Pending Orders</button>
+  <button data-tab="production">🏭 4. Production</button>
+  <button data-tab="inward">📥 5. Part Inward</button>
+  <button data-tab="fabric">🧵 Fabric Master</button>
+  <button data-tab="master">📊 Master Sheet</button>
+  <button data-tab="cutting">✂️ Cutting Plan</button>
+  <button data-tab="settings">⚙️ Settings</button>
+</div>
+
+<div class="container">
+
+  <!-- OVERVIEW -->
+  <div id="page-overview">
+    <div class="card">
+      <div class="card-title">📊 Data Status</div>
+      <div class="stats" id="overviewStats"></div>
+      <div id="overviewMsg"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🚀 Quick Start (6 steps)</div>
+      <ol style="padding-left:20px;font-size:14px;line-height:1.8;">
+        <li><b>📥 1. Sale Data</b> tab → upload last month's sales Excel</li>
+        <li><b>📦 2. Stock Data</b> tab → upload current stock Excel</li>
+        <li><b>📋 3. Pending Orders</b> tab → upload pending orders Excel</li>
+        <li><b>🏭 4. Production</b> tab → upload cutting/production data (optional)</li>
+        <li><b>📥 5. Part Inward</b> tab → upload received production (optional)</li>
+        <li><b>📊 Master Sheet</b> → sab data ek jagah dekho · <b>✂️ Cutting Plan</b> → generate aur export</li>
+      </ol>
+      <div style="margin-top:10px;padding:10px;background:#fef3c7;border-radius:8px;font-size:13px;">
+        <b>Formula:</b> Cutting = MOQ − Stock + Pending − Production − Part Inward
+      </div>
+    </div>
+  </div>
+
+  <!-- SALE DATA -->
+  <div id="page-sale" style="display:none">
+    <div class="card">
+      <div class="card-title">📥 1. Sale Data</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Last month ka sales data (size-wise quantity).</p>
+      <div class="upload" id="saleUpload">
+        <div style="font-size:36px;">📁</div>
+        <div style="margin-top:8px;font-size:14px;">Tap to choose Sale Excel</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">Columns: Item, Color Desc, S, M, L, XL...8XL</div>
+      </div>
+      <input type="file" id="saleFile" accept=".xlsx,.xls">
+      <div style="margin-top:12px;">
+        <button class="btn btn-secondary" id="saleSampleBtn">📄 Download Sample</button>
+        <button class="btn btn-danger" id="saleClearBtn">🗑️ Clear Sale Data</button>
+      </div>
+      <div id="saleStatus"></div>
+      <div id="saleDataView"></div>
+    </div>
+  </div>
+
+  <!-- STOCK DATA -->
+  <div id="page-stock" style="display:none">
+    <div class="card">
+      <div class="card-title">📦 2. Stock Data</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Current stock at all stores (size-wise).</p>
+      <div class="upload" id="stockUpload">
+        <div style="font-size:36px;">📦</div>
+        <div style="margin-top:8px;font-size:14px;">Tap to choose Stock Excel</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">Columns: Item, Color Desc, S, M, L, XL...8XL</div>
+      </div>
+      <input type="file" id="stockFile" accept=".xlsx,.xls">
+      <div style="margin-top:12px;">
+        <button class="btn btn-secondary" id="stockSampleBtn">📄 Download Sample</button>
+        <button class="btn btn-danger" id="stockClearBtn">🗑️ Clear Stock Data</button>
+      </div>
+      <div id="stockStatus"></div>
+      <div id="stockDataView"></div>
+    </div>
+  </div>
+
+  <!-- PENDING ORDERS -->
+  <div id="page-pending" style="display:none">
+    <div class="card">
+      <div class="card-title">📋 3. Pending Orders</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Already placed orders with vendor (size-wise).</p>
+      <div class="upload" id="pendingUpload">
+        <div style="font-size:36px;">📋</div>
+        <div style="margin-top:8px;font-size:14px;">Tap to choose Pending Orders Excel</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">Columns: Item, Color Desc, S, M, L, XL...8XL</div>
+      </div>
+      <input type="file" id="pendingFile" accept=".xlsx,.xls">
+      <div style="margin-top:12px;">
+        <button class="btn btn-secondary" id="pendingSampleBtn">📄 Download Sample</button>
+        <button class="btn btn-danger" id="pendingClearBtn">🗑️ Clear Pending Data</button>
+      </div>
+      <div id="pendingStatus"></div>
+      <div id="pendingDataView"></div>
+    </div>
+  </div>
+
+  <!-- PRODUCTION -->
+  <div id="page-production" style="display:none">
+    <div class="card">
+      <div class="card-title">🏭 4. Production Data</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Cutting di hui qty (production mein hai, abhi wapas nahi aaya). Optional — skip karoge to 0 treat hoga.</p>
+      <div class="upload" id="productionUpload">
+        <div style="font-size:36px;">🏭</div>
+        <div style="margin-top:8px;font-size:14px;">Tap to choose Production Excel</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">Columns: Item, Color Desc, Category, S, M, L, XL...8XL</div>
+      </div>
+      <input type="file" id="productionFile" accept=".xlsx,.xls">
+      <div style="margin-top:12px;">
+        <button class="btn btn-secondary" id="productionSampleBtn">📄 Download Sample</button>
+        <button class="btn btn-danger" id="productionClearBtn">🗑️ Clear Production Data</button>
+      </div>
+      <div id="productionStatus"></div>
+      <div id="productionDataView"></div>
+    </div>
+  </div>
+
+  <!-- PART INWARD -->
+  <div id="page-inward" style="display:none">
+    <div class="card">
+      <div class="card-title">📥 5. Part Inward Data</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Production ka jo wapas aaya (received from factory). Optional.</p>
+      <div class="upload" id="inwardUpload">
+        <div style="font-size:36px;">📥</div>
+        <div style="margin-top:8px;font-size:14px;">Tap to choose Part Inward Excel</div>
+        <div style="font-size:11px;color:#64748b;margin-top:4px;">Columns: Item, Color Desc, Category, S, M, L, XL...8XL</div>
+      </div>
+      <input type="file" id="inwardFile" accept=".xlsx,.xls">
+      <div style="margin-top:12px;">
+        <button class="btn btn-secondary" id="inwardSampleBtn">📄 Download Sample</button>
+        <button class="btn btn-danger" id="inwardClearBtn">🗑️ Clear Part Inward Data</button>
+      </div>
+      <div id="inwardStatus"></div>
+      <div id="inwardDataView"></div>
+    </div>
+  </div>
+
+  <!-- FABRIC MASTER -->
+  <div id="page-fabric" style="display:none">
+    <div class="card">
+      <div class="card-title">🧵 Fabric Master — Consumption Rate</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Style + Color wise fabric per piece. Unit auto-applied from Settings.</p>
+
+      <!-- Unit toggle -->
+      <div style="background:#f0fdf4;padding:12px;border-radius:10px;border:1px solid #86efac;margin-bottom:10px;">
+        <div style="font-weight:500;margin-bottom:8px;">📏 Fabric Unit</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" id="unitMeterBtn">📐 Meters</button>
+          <button class="btn btn-secondary" id="unitKgBtn">⚖️ Kilograms</button>
+          <span style="font-size:13px;align-self:center;margin-left:10px;">Current: <b id="currentUnit">meters</b></span>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:10px;">
+        <div style="font-weight:500;margin-bottom:10px;">🔍 Filters (optional)</div>
+        <div class="grid2">
+          <div class="field"><label>🎨 Style</label><button class="ms-btn" id="fabricStyleBtn"></button></div>
+          <div class="field"><label>🌈 Color</label><button class="ms-btn" id="fabricColorBtn"></button></div>
+        </div>
+        <div style="margin-top:10px;"><button class="btn btn-secondary" id="fabricClearFiltersBtn">✕ Clear Filters</button></div>
+      </div>
+
+      <!-- Manual Entry -->
+      <div style="background:#fef9c3;padding:12px;border-radius:10px;border:1px solid #fde68a;margin-bottom:10px;">
+        <div style="font-weight:500;margin-bottom:10px;">➕ Add / Update Fabric Rate</div>
+        <div class="grid2">
+          <div class="field"><label>Style (Item)</label><input type="text" id="fabricEntryItem" placeholder="e.g. 1001"></div>
+          <div class="field"><label>Color Desc</label><input type="text" id="fabricEntryColor" placeholder="e.g. Navy"></div>
+          <div class="field"><label>Fabric per Piece</label><input type="number" id="fabricEntryQty" placeholder="e.g. 1.5" step="0.01" min="0"></div>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn btn-primary" id="fabricAddBtn">➕ Add / Update</button>
+          <button class="btn btn-secondary" id="fabricAutoFillBtn">🪄 Auto-fill from existing styles</button>
+        </div>
+      </div>
+
+      <!-- Upload Excel option -->
+      <div style="background:#eff6ff;padding:12px;border-radius:10px;border:1px solid #93c5fd;margin-bottom:10px;">
+        <div style="font-weight:500;margin-bottom:8px;">📥 Or Upload Excel</div>
+        <p style="font-size:11px;color:#64748b;margin-bottom:8px;">Columns: Item, Color Desc, Fabric per Piece</p>
+        <input type="file" id="fabricFile" accept=".xlsx,.xls" style="display:none;">
+        <button class="btn btn-secondary" id="fabricUploadBtn">📁 Choose Fabric Excel</button>
+        <button class="btn btn-secondary" id="fabricSampleBtn">📄 Download Sample</button>
+        <button class="btn btn-danger" id="fabricClearBtn">🗑️ Clear All Fabric Data</button>
+      </div>
+
+      <div id="fabricStatus"></div>
+      <div id="fabricDataView"></div>
+    </div>
+  </div>
+
+  <!-- MASTER SHEET -->
+  <div id="page-master" style="display:none">
+    <div class="card">
+      <div class="card-title">📊 Master Sheet — All Data in One View</div>
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px;">Style + Color + Size wise complete picture. Formula: <b>Cutting = MOQ − Stock + Pending − Production − Part Inward</b></p>
+
+      <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:10px;">
+        <div style="font-weight:500;margin-bottom:10px;">🔍 Filters (optional)</div>
+        <div class="grid2">
+          <div class="field"><label>🎨 Style</label><button class="ms-btn" id="masterStyleBtn"></button></div>
+          <div class="field"><label>📂 Category</label><button class="ms-btn" id="masterCatBtn"></button></div>
+          <div class="field"><label>🌈 Color</label><button class="ms-btn" id="masterColorBtn"></button></div>
+        </div>
+        <div style="margin-top:10px;"><button class="btn btn-secondary" id="masterClearFiltersBtn">✕ Clear Filters</button></div>
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <button class="btn btn-primary" id="generateMasterBtn">🔄 Generate Master Sheet</button>
+        <button class="btn btn-success" id="exportMasterBtn">📤 Export to Excel</button>
+      </div>
+      <div id="masterSummary"></div>
+      <div id="masterTable"></div>
+    </div>
+  </div>
+  <div id="page-cutting" style="display:none">
+    <div class="card">
+      <div class="card-title">✂️ Cutting Plan</div>
+      <div id="cuttingReady"></div>
+
+      <div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin:10px 0;">
+        <div style="font-weight:500;margin-bottom:10px;">🔍 Filters (optional — leave empty for all)</div>
+        <div class="grid2">
+          <div class="field">
+            <label>🎨 Style (Item)</label>
+            <button class="ms-btn" id="cutStyleBtn"><span class="ms-placeholder">All Styles</span><span class="ms-arrow">▼</span></button>
+          </div>
+          <div class="field">
+            <label>📂 Category</label>
+            <button class="ms-btn" id="cutCatBtn"><span class="ms-placeholder">All Categories</span><span class="ms-arrow">▼</span></button>
+          </div>
+          <div class="field">
+            <label>🌈 Color</label>
+            <button class="ms-btn" id="cutColorBtn"><span class="ms-placeholder">All Colors</span><span class="ms-arrow">▼</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" id="generateBtn">🔄 Generate Cutting Plan</button>
+        <button class="btn btn-success" id="exportBtn">📤 Export to Excel</button>
+        <button class="btn btn-secondary" id="clearFiltersBtn">✕ Clear Filters</button>
+      </div>
+      <div id="cuttingSummary"></div>
+      <div id="cuttingTable"></div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="page-settings" style="display:none">
+    <div class="card">
+      <div class="card-title">⚙️ Cutting Settings</div>
+      <div class="grid2">
+        <div class="field">
+          <label>📅 MOQ Days (default)</label>
+          <input type="number" id="setMoqDays" value="45" min="7" max="365">
+          <small style="font-size:11px;color:#64748b;display:block;margin-top:4px;">Kitne din ka stock chahiye (default: 45)</small>
+        </div>
+        <div class="field">
+          <label>📆 Sales Period (days)</label>
+          <input type="number" id="setSalesPeriod" value="30" min="7" max="365">
+          <small style="font-size:11px;color:#64748b;display:block;margin-top:4px;">Uploaded sales kitne din ka hai (default: 30)</small>
+        </div>
+        <div class="field">
+          <label>🔢 Minimum Repeat Sales</label>
+          <input type="number" id="setMinRepeat" value="6" min="1" max="100">
+          <small style="font-size:11px;color:#64748b;display:block;margin-top:4px;">Itne se kam bika ho = SKIP (fluke). Default: 6</small>
+        </div>
+        <div class="field">
+          <label>🎯 Minimum Cutting Qty</label>
+          <input type="number" id="setMinCut" value="0" min="0" max="100">
+          <small style="font-size:11px;color:#64748b;display:block;margin-top:4px;">Itne se kam cutting = skip (vendor MOQ). Default: 0</small>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-primary" id="saveSetBtn">💾 Save</button>
+        <button class="btn btn-secondary" id="resetSetBtn">↩️ Reset</button>
+      </div>
+      <div id="setStatus"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MULTI-SELECT MODAL -->
+<div class="modal-bg" id="msModal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="msTitle">Select</div>
+      <button class="modal-close" id="msClose">✕</button>
+    </div>
+    <div class="modal-search"><input type="text" id="msSearch" placeholder="🔍 Type to search..."></div>
+    <div class="modal-tools">
+      <a id="msSelectAll">Select all</a>
+      <a id="msClearAll">Clear</a>
+      <span class="count" id="msCount">0/0</span>
+    </div>
+    <div class="modal-list" id="msList"></div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" id="msCancel">Cancel</button>
+      <button class="btn btn-primary" id="msDone">✓ Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+window.addEventListener('error', function(e) {
+  var b = document.body;
+  if (b) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#fee2e2;color:#991b1b;padding:10px;font-size:12px;z-index:99999;';
+    d.textContent = '⚠️ Error: ' + e.message + ' (line ' + (e.lineno||'?') + ')';
+    b.insertBefore(d, b.firstChild);
+  }
+});
+
+// === CONSTANTS ===
+var SIZES = ['S','M','L','XL','2XL','3XL','4XL','5XL','6XL','7XL','8XL'];
+var SALE_KEY = 'cutSale_v2';
+var STOCK_KEY = 'cutStock_v2';
+var PENDING_KEY = 'cutPending_v2';
+var PRODUCTION_KEY = 'cutProduction_v2';
+var INWARD_KEY = 'cutInward_v2';
+var FABRIC_KEY = 'cutFabric_v2';
+var SET_KEY = 'cutSet_v2';
+
+// === STATE ===
+var saleData = [];
+var stockData = [];
+var pendingData = [];
+var productionData = [];
+var inwardData = [];
+var fabricData = [];  // [{Item, Color Desc, FabricPerPiece}]
+var settings = { moqDays: 45, salesPeriod: 30, minRepeatQty: 6, minCutQty: 0, fabricUnit: 'meters' };
+
+// Cutting filter state
+var cutFilters = {
+  style: { picked: [], options: [], label: 'Style (Item)', btnId: 'cutStyleBtn' },
+  cat:   { picked: [], options: [], label: 'Category',     btnId: 'cutCatBtn' },
+  color: { picked: [], options: [], label: 'Color',        btnId: 'cutColorBtn' }
+};
+
+// Per-tab filter state (for data tabs + master sheet) - same shape as cutFilters
+// Initialized programmatically per tab to keep it DRY
+function makeTabFilters(tabKey) {
+  return {
+    style: { picked: [], options: [], label: 'Style (Item)', btnId: tabKey + 'StyleBtn' },
+    cat:   { picked: [], options: [], label: 'Category',     btnId: tabKey + 'CatBtn' },
+    color: { picked: [], options: [], label: 'Color',        btnId: tabKey + 'ColorBtn' }
+  };
+}
+var tabFilters = {
+  sale: makeTabFilters('sale'),
+  stock: makeTabFilters('stock'),
+  pending: makeTabFilters('pending'),
+  production: makeTabFilters('production'),
+  inward: makeTabFilters('inward'),
+  fabric: makeTabFilters('fabric'),
+  master: makeTabFilters('master')
+};
+var activeFilter = null;     // 'style' or 'cat' or 'color' when modal open
+var activeFilterContext = 'cut';  // 'cut' or 'sale','stock','pending','production','inward','master'
+var tempPicked = [];
+var tempSearch = '';
+
+function getFilterSet() {
+  return activeFilterContext === 'cut' ? cutFilters : tabFilters[activeFilterContext];
+}
+
+// === HELPERS ===
+function $(id) { return document.getElementById(id); }
+function num(v) { return parseFloat(v) || 0; }
+function norm(v) { return v == null ? '' : String(v).trim().toUpperCase(); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+  });
+}
+function rowTotal(r) { var t=0; for (var i=0;i<SIZES.length;i++) t += num(r[SIZES[i]]); return t; }
+
+// === STORAGE ===
+function loadAll() {
+  try { var s = localStorage.getItem(SALE_KEY); if (s) saleData = JSON.parse(s) || []; } catch(e) { saleData = []; }
+  try { var s = localStorage.getItem(STOCK_KEY); if (s) stockData = JSON.parse(s) || []; } catch(e) { stockData = []; }
+  try { var s = localStorage.getItem(PENDING_KEY); if (s) pendingData = JSON.parse(s) || []; } catch(e) { pendingData = []; }
+  try { var s = localStorage.getItem(PRODUCTION_KEY); if (s) productionData = JSON.parse(s) || []; } catch(e) { productionData = []; }
+  try { var s = localStorage.getItem(INWARD_KEY); if (s) inwardData = JSON.parse(s) || []; } catch(e) { inwardData = []; }
+  try { var s = localStorage.getItem(FABRIC_KEY); if (s) fabricData = JSON.parse(s) || []; } catch(e) { fabricData = []; }
+  try {
+    var s = localStorage.getItem(SET_KEY);
+    if (s) { var p = JSON.parse(s); for (var k in p) if (settings.hasOwnProperty(k)) settings[k] = p[k]; }
+  } catch(e) {}
+}
+function saveSale() { try { localStorage.setItem(SALE_KEY, JSON.stringify(saleData)); } catch(e) { alert('Storage full'); } }
+function saveStock() { try { localStorage.setItem(STOCK_KEY, JSON.stringify(stockData)); } catch(e) { alert('Storage full'); } }
+function savePending() { try { localStorage.setItem(PENDING_KEY, JSON.stringify(pendingData)); } catch(e) { alert('Storage full'); } }
+function saveProduction() { try { localStorage.setItem(PRODUCTION_KEY, JSON.stringify(productionData)); } catch(e) { alert('Storage full'); } }
+function saveInward() { try { localStorage.setItem(INWARD_KEY, JSON.stringify(inwardData)); } catch(e) { alert('Storage full'); } }
+function saveFabric() { try { localStorage.setItem(FABRIC_KEY, JSON.stringify(fabricData)); } catch(e) { alert('Storage full'); } }
+function saveSet() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch(e) {} }
+
+// === XLSX AVAILABILITY CHECK ===
+// Returns true if XLSX library is loaded. Shows friendly message if not.
+function xlsxReady(statusElId) {
+  if (typeof XLSX !== 'undefined' && XLSX && XLSX.utils) return true;
+  var msg = '<div class="alert alert-err">⚠️ Excel library load nahi hui. Internet check karo aur page refresh karo (Ctrl+R / pull-down). Baaki dashboard kaam karega — sirf Excel upload/download ke liye library chahiye.</div>';
+  if (statusElId && $(statusElId)) $(statusElId).innerHTML = msg;
+  else alert('Excel library load nahi hui. Internet check karke page refresh karo.');
+  return false;
+}
+
+// === GENERIC FILE HANDLER (used by all 3 data types) ===
+// dataType: 'sale', 'stock', or 'pending'
+function handleFile(file, dataType) {
+  if (!xlsxReady(dataType + 'Status')) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, {defval:0});
+      validateAndStore(rows, dataType);
+    } catch(err) {
+      $(dataType + 'Status').innerHTML = '<div class="alert alert-err">❌ ' + err.message + '</div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function validateAndStore(rows, dataType) {
+  var statusEl = $(dataType + 'Status');
+  if (!rows.length) { statusEl.innerHTML = '<div class="alert alert-err">❌ Empty file</div>'; return; }
+  var cols = Object.keys(rows[0]);
+  var needed = ['Item', 'Color Desc'].concat(SIZES);
+  var missing = needed.filter(function(c) { return cols.indexOf(c) === -1; });
+  if (missing.length) {
+    statusEl.innerHTML = '<div class="alert alert-err">⚠️ Missing columns: ' + missing.join(', ') + '</div>';
+    return;
+  }
+
+  // Aggregate by Item+Color (in case multiple rows for same combo)
+  var map = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var item = String(r.Item || '').trim();
+    var color = String(r['Color Desc'] || '').trim();
+    if (!item) continue;
+    var key = item + '||' + color;
+    if (!map[key]) {
+      map[key] = { Item: item, 'Color Desc': color, 'Category': (r.Category ? String(r.Category).trim() : 'Uncategorized') };
+      for (var s = 0; s < SIZES.length; s++) map[key][SIZES[s]] = 0;
+    }
+    // Use latest non-empty Category if available
+    if (r.Category && String(r.Category).trim()) {
+      map[key].Category = String(r.Category).trim();
+    }
+    for (var s = 0; s < SIZES.length; s++) map[key][SIZES[s]] += num(r[SIZES[s]]);
+  }
+  var cleaned = [];
+  for (var k in map) cleaned.push(map[k]);
+
+  // Sort by Item, Color
+  cleaned.sort(function(a, b) {
+    if (a.Item !== b.Item) return a.Item.localeCompare(b.Item);
+    return a['Color Desc'].localeCompare(b['Color Desc']);
+  });
+
+  // Store and render
+  if (dataType === 'sale') { saleData = cleaned; saveSale(); }
+  else if (dataType === 'stock') { stockData = cleaned; saveStock(); }
+  else if (dataType === 'pending') { pendingData = cleaned; savePending(); }
+  else if (dataType === 'production') { productionData = cleaned; saveProduction(); }
+  else if (dataType === 'inward') { inwardData = cleaned; saveInward(); }
+
+  statusEl.innerHTML = '<div class="alert alert-ok">✓ Loaded ' + cleaned.length + ' Item-Color combinations.</div>';
+  renderDataView(dataType);
+  $(dataType + 'File').value = '';
+}
+
+// === DATA VIEW: shows full table with search filter ===
+function renderDataView(dataType) {
+  var arr;
+  if (dataType === 'sale') arr = saleData;
+  else if (dataType === 'stock') arr = stockData;
+  else if (dataType === 'pending') arr = pendingData;
+  else if (dataType === 'production') arr = productionData;
+  else if (dataType === 'inward') arr = inwardData;
+  else arr = [];
+
+  var el = $(dataType + 'DataView');
+  if (!el) return;
+
+  // Populate filter options for this tab
+  populateTabFilterOptions(dataType);
+
+  // === BUILD UI ===
+  var h = '';
+
+  // 1. FILTERS
+  h += '<div style="background:#f8fafc;padding:12px;border-radius:10px;border:1px solid #e2e8f0;margin-top:14px;margin-bottom:10px;">';
+  h += '<div style="font-weight:500;margin-bottom:10px;">🔍 Filters (optional)</div>';
+  h += '<div class="grid2">';
+  h += '<div class="field"><label>🎨 Style</label><button class="ms-btn" id="' + dataType + 'StyleBtn"></button></div>';
+  h += '<div class="field"><label>📂 Category</label><button class="ms-btn" id="' + dataType + 'CatBtn"></button></div>';
+  h += '<div class="field"><label>🌈 Color</label><button class="ms-btn" id="' + dataType + 'ColorBtn"></button></div>';
+  h += '</div>';
+  h += '<div style="margin-top:10px;"><button class="btn btn-secondary" id="' + dataType + 'ClearFiltersBtn">✕ Clear Filters</button></div>';
+  h += '</div>';
+
+  // 2. MANUAL ENTRY
+  h += '<div style="background:#fef9c3;padding:12px;border-radius:10px;border:1px solid #fde68a;margin-bottom:10px;">';
+  h += '<div style="font-weight:500;margin-bottom:10px;">➕ Add Row Manually</div>';
+  h += '<div class="grid2">';
+  h += '<div class="field"><label>Style (Item)</label><input type="text" id="' + dataType + 'EntryItem" placeholder="e.g. 1001"></div>';
+  h += '<div class="field"><label>Color Desc</label><input type="text" id="' + dataType + 'EntryColor" placeholder="e.g. Navy"></div>';
+  h += '<div class="field"><label>Category</label><input type="text" id="' + dataType + 'EntryCat" placeholder="e.g. T-Shirt"></div>';
+  h += '</div>';
+  h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px;margin-top:8px;">';
+  for (var s = 0; s < SIZES.length; s++) {
+    h += '<div class="field" style="margin:0;"><label style="font-size:10px;">' + SIZES[s] + '</label><input type="number" id="' + dataType + 'EntrySize_' + SIZES[s] + '" value="0" min="0" style="padding:6px;font-size:13px;"></div>';
+  }
+  h += '</div>';
+  h += '<div style="margin-top:10px;"><button class="btn btn-primary" id="' + dataType + 'AddRowBtn">➕ Add Row</button></div>';
+  h += '</div>';
+
+  // 3. APPLY FILTERS to data
+  var filteredArr = applyTabFilters(arr, dataType);
+
+  // 4. Show empty state if no data
+  if (!arr.length) {
+    h += '<div class="empty"><div class="icon">📭</div><div>No data yet. Upload Excel or add row manually.</div></div>';
+    el.innerHTML = h;
+    wireDataViewButtons(dataType);
+    return;
+  }
+
+  // 5. Calculate totals (on filtered data)
+  var sizeTotals = {};
+  for (var s = 0; s < SIZES.length; s++) sizeTotals[SIZES[s]] = 0;
+  var grandTotal = 0;
+  for (var i = 0; i < filteredArr.length; i++) {
+    for (var s = 0; s < SIZES.length; s++) {
+      sizeTotals[SIZES[s]] += num(filteredArr[i][SIZES[s]]);
+    }
+    grandTotal += rowTotal(filteredArr[i]);
+  }
+
+  // 6. Summary
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;">';
+  h += '<div class="stat" style="margin:0;flex:1;min-width:140px;"><div class="label">Rows (filtered)</div><div class="value">' + filteredArr.length + ' / ' + arr.length + '</div></div>';
+  h += '<div class="stat green" style="margin:0;flex:1;min-width:140px;"><div class="label">Total Quantity</div><div class="value">' + grandTotal.toLocaleString() + '</div></div>';
+  h += '</div>';
+
+  // 7. Search box
+  h += '<input type="text" class="search-box" id="search_' + dataType + '" placeholder="🔍 Quick search...">';
+
+  // 8. Table (with delete column)
+  h += '<div style="font-weight:500;margin:10px 0 6px;">📋 Full Data View</div>';
+  h += '<div class="tablewrap"><table id="table_' + dataType + '"><thead><tr><th>#</th><th>Style</th><th>Color</th><th>Category</th>';
+  for (var s = 0; s < SIZES.length; s++) h += '<th class="num">' + SIZES[s] + '</th>';
+  h += '<th class="num">Total</th><th>Action</th></tr></thead><tbody id="tbody_' + dataType + '">';
+
+  if (filteredArr.length === 0) {
+    h += '<tr><td colspan="' + (SIZES.length + 6) + '" style="text-align:center;color:#94a3b8;padding:20px;">No rows match filters</td></tr>';
+  } else {
+    for (var i = 0; i < filteredArr.length; i++) {
+      var r = filteredArr[i];
+      // Find original index in unfiltered array for delete
+      var origIdx = arr.indexOf(r);
+      var total = rowTotal(r);
+      h += '<tr data-search="' + esc(r.Item + ' ' + r['Color Desc'] + ' ' + (r.Category || '')).toLowerCase() + '">';
+      h += '<td>' + (i + 1) + '</td>';
+      h += '<td><b>' + esc(r.Item) + '</b></td>';
+      h += '<td>' + esc(r['Color Desc']) + '</td>';
+      h += '<td>' + esc(r.Category || 'Uncategorized') + '</td>';
+      for (var s = 0; s < SIZES.length; s++) {
+        var v = num(r[SIZES[s]]);
+        h += '<td class="num">' + (v || '') + '</td>';
+      }
+      h += '<td class="num"><b>' + total + '</b></td>';
+      h += '<td><button class="btn-del" data-idx="' + origIdx + '" style="background:#fee2e2;color:#991b1b;border:none;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">🗑️</button></td>';
+      h += '</tr>';
+    }
+    // Totals row
+    h += '<tr style="background:#fef3c7;font-weight:600;"><td colspan="4">TOTAL</td>';
+    for (var s = 0; s < SIZES.length; s++) h += '<td class="num">' + sizeTotals[SIZES[s]].toLocaleString() + '</td>';
+    h += '<td class="num">' + grandTotal.toLocaleString() + '</td><td></td></tr>';
+  }
+  h += '</tbody></table></div>';
+
+  el.innerHTML = h;
+
+  // Re-render filter buttons after innerHTML wipe
+  renderFilterButton('style', dataType);
+  renderFilterButton('cat', dataType);
+  renderFilterButton('color', dataType);
+
+  wireDataViewButtons(dataType);
+}
+
+// Wire up filter buttons, manual entry, search, delete
+function wireDataViewButtons(dataType) {
+  // Filter buttons
+  var sBtn = $(dataType + 'StyleBtn');
+  var cBtn = $(dataType + 'CatBtn');
+  var clBtn = $(dataType + 'ColorBtn');
+  if (sBtn) sBtn.onclick = function() { populateTabFilterOptions(dataType); openFilterModal('style', dataType); };
+  if (cBtn) cBtn.onclick = function() { populateTabFilterOptions(dataType); openFilterModal('cat', dataType); };
+  if (clBtn) clBtn.onclick = function() { populateTabFilterOptions(dataType); openFilterModal('color', dataType); };
+
+  // Clear filters
+  var cfBtn = $(dataType + 'ClearFiltersBtn');
+  if (cfBtn) cfBtn.onclick = function() { clearTabFilters(dataType); renderDataView(dataType); };
+
+  // Add row
+  var addBtn = $(dataType + 'AddRowBtn');
+  if (addBtn) addBtn.onclick = function() { addManualRow(dataType); };
+
+  // Search
+  var searchInput = $('search_' + dataType);
+  if (searchInput) {
+    searchInput.oninput = function(e) {
+      var q = e.target.value.toLowerCase();
+      var tbody = $('tbody_' + dataType);
+      if (!tbody) return;
+      var rows = tbody.querySelectorAll('tr[data-search]');
+      for (var i = 0; i < rows.length; i++) {
+        var match = rows[i].getAttribute('data-search').indexOf(q) !== -1;
+        rows[i].style.display = match ? '' : 'none';
+      }
+    };
+  }
+
+  // Delete buttons (event delegation)
+  var tbody = $('tbody_' + dataType);
+  if (tbody) {
+    tbody.onclick = function(e) {
+      var btn = e.target;
+      while (btn && btn !== this && !btn.classList.contains('btn-del')) btn = btn.parentNode;
+      if (btn && btn.classList && btn.classList.contains('btn-del')) {
+        var idx = parseInt(btn.getAttribute('data-idx'));
+        if (confirm('Delete this row?')) {
+          deleteRow(dataType, idx);
+        }
+      }
+    };
+  }
+}
+
+function addManualRow(dataType) {
+  var item = ($(dataType + 'EntryItem').value || '').trim();
+  var color = ($(dataType + 'EntryColor').value || '').trim();
+  var cat = ($(dataType + 'EntryCat').value || '').trim() || 'Uncategorized';
+  if (!item) { alert('Style (Item) zaroori hai'); return; }
+
+  var newRow = { Item: item, 'Color Desc': color, Category: cat };
+  var anyQty = false;
+  for (var s = 0; s < SIZES.length; s++) {
+    var v = num($(dataType + 'EntrySize_' + SIZES[s]).value);
+    newRow[SIZES[s]] = v;
+    if (v > 0) anyQty = true;
+  }
+  if (!anyQty) { alert('Kam se kam ek size mein qty daalo'); return; }
+
+  // Get the right array and merge with existing same-key row (aggregate)
+  var arr = getDataArray(dataType);
+  var key = item.toUpperCase() + '||' + color.toUpperCase();
+  var found = null;
+  for (var i = 0; i < arr.length; i++) {
+    var k = String(arr[i].Item).trim().toUpperCase() + '||' + String(arr[i]['Color Desc']||'').trim().toUpperCase();
+    if (k === key) { found = arr[i]; break; }
+  }
+  if (found) {
+    // Aggregate sizes
+    for (var s = 0; s < SIZES.length; s++) found[SIZES[s]] = num(found[SIZES[s]]) + num(newRow[SIZES[s]]);
+    if (cat && cat !== 'Uncategorized') found.Category = cat;
+  } else {
+    arr.push(newRow);
+  }
+
+  // Save
+  saveDataArray(dataType);
+
+  // Reset entry fields
+  $(dataType + 'EntryItem').value = '';
+  $(dataType + 'EntryColor').value = '';
+  $(dataType + 'EntryCat').value = '';
+  for (var s = 0; s < SIZES.length; s++) $(dataType + 'EntrySize_' + SIZES[s]).value = 0;
+
+  renderDataView(dataType);
+}
+
+function deleteRow(dataType, idx) {
+  var arr = getDataArray(dataType);
+  if (idx < 0 || idx >= arr.length) return;
+  arr.splice(idx, 1);
+  saveDataArray(dataType);
+  renderDataView(dataType);
+}
+
+function getDataArray(dataType) {
+  if (dataType === 'sale') return saleData;
+  if (dataType === 'stock') return stockData;
+  if (dataType === 'pending') return pendingData;
+  if (dataType === 'production') return productionData;
+  if (dataType === 'inward') return inwardData;
+  return [];
+}
+
+function saveDataArray(dataType) {
+  if (dataType === 'sale') saveSale();
+  else if (dataType === 'stock') saveStock();
+  else if (dataType === 'pending') savePending();
+  else if (dataType === 'production') saveProduction();
+  else if (dataType === 'inward') saveInward();
+}
+
+// === SAMPLE DOWNLOADS ===
+function downloadSaleSample() {
+  var sample = [
+    {Item:'1001','Color Desc':'Navy Blue','Category':'T-Shirt',S:60,M:150,L:210,XL:90,'2XL':30,'3XL':12,'4XL':5,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1001','Color Desc':'Red','Category':'T-Shirt',S:30,M:90,L:120,XL:60,'2XL':18,'3XL':6,'4XL':2,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1002','Color Desc':'White','Category':'Shirt',S:18,M:75,L:120,XL:60,'2XL':24,'3XL':9,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1003','Color Desc':'Indigo','Category':'Bottom',S:12,M:60,L:135,XL:90,'2XL':30,'3XL':12,'4XL':3,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1004','Color Desc':'Black','Category':'Sweatshirt',S:9,M:45,L:90,XL:60,'2XL':18,'3XL':6,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'SH197','Color Desc':'Lilac','Category':'Shirt',S:8,M:40,L:60,XL:30,'2XL':12,'3XL':4,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'CG28','Color Desc':'Stone','Category':'Top',S:6,M:35,L:50,XL:25,'2XL':10,'3XL':3,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0}
+  ];
+  var ws = XLSX.utils.json_to_sheet(sample);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sale Data');
+  XLSX.writeFile(wb, 'Sample_Sale.xlsx');
+}
+
+function downloadStockSample() {
+  var sample = [
+    {Item:'1001','Color Desc':'Navy Blue','Category':'T-Shirt',S:30,M:50,L:40,XL:60,'2XL':10,'3XL':4,'4XL':2,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1001','Color Desc':'Red','Category':'T-Shirt',S:15,M:25,L:30,XL:20,'2XL':5,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1002','Color Desc':'White','Category':'Shirt',S:10,M:20,L:30,XL:15,'2XL':5,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1003','Color Desc':'Indigo','Category':'Bottom',S:5,M:25,L:30,XL:35,'2XL':10,'3XL':3,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1004','Color Desc':'Black','Category':'Sweatshirt',S:5,M:15,L:30,XL:25,'2XL':8,'3XL':2,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'SH197','Color Desc':'Lilac','Category':'Shirt',S:4,M:12,L:20,XL:10,'2XL':5,'3XL':1,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'CG28','Color Desc':'Stone','Category':'Top',S:3,M:10,L:15,XL:8,'2XL':3,'3XL':1,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0}
+  ];
+  var ws = XLSX.utils.json_to_sheet(sample);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Data');
+  XLSX.writeFile(wb, 'Sample_Stock.xlsx');
+}
+
+function downloadPendingSample() {
+  var sample = [
+    {Item:'1001','Color Desc':'Navy Blue','Category':'T-Shirt',S:20,M:100,L:100,XL:0,'2XL':0,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1001','Color Desc':'Red','Category':'T-Shirt',S:0,M:50,L:50,XL:0,'2XL':0,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1002','Color Desc':'White','Category':'Shirt',S:0,M:0,L:50,XL:30,'2XL':0,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0}
+  ];
+  var ws = XLSX.utils.json_to_sheet(sample);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pending Orders');
+  XLSX.writeFile(wb, 'Sample_Pending.xlsx');
+}
+
+function downloadProductionSample() {
+  var sample = [
+    {Item:'1001','Color Desc':'Navy Blue','Category':'T-Shirt',S:0,M:50,L:100,XL:30,'2XL':10,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1002','Color Desc':'White','Category':'Shirt',S:0,M:0,L:80,XL:50,'2XL':20,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0}
+  ];
+  var ws = XLSX.utils.json_to_sheet(sample);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Production');
+  XLSX.writeFile(wb, 'Sample_Production.xlsx');
+}
+
+function downloadInwardSample() {
+  var sample = [
+    {Item:'1001','Color Desc':'Navy Blue','Category':'T-Shirt',S:0,M:20,L:40,XL:10,'2XL':0,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0},
+    {Item:'1002','Color Desc':'White','Category':'Shirt',S:0,M:0,L:30,XL:20,'2XL':0,'3XL':0,'4XL':0,'5XL':0,'6XL':0,'7XL':0,'8XL':0}
+  ];
+  var ws = XLSX.utils.json_to_sheet(sample);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Part Inward');
+  XLSX.writeFile(wb, 'Sample_Part_Inward.xlsx');
+}
+
+// === MULTI-SELECT FILTER LOGIC ===
+function populateFilterOptions() {
+  // Get unique styles (Item), categories, and colors from saleData
+  var styleSet = {}, catSet = {}, colorSet = {};
+  for (var i = 0; i < saleData.length; i++) {
+    var r = saleData[i];
+    if (r.Item) styleSet[String(r.Item).trim()] = 1;
+    if (r.Category) catSet[String(r.Category).trim()] = 1;
+    if (r['Color Desc']) colorSet[String(r['Color Desc']).trim()] = 1;
+  }
+  cutFilters.style.options = Object.keys(styleSet).sort();
+  cutFilters.cat.options = Object.keys(catSet).sort();
+  cutFilters.color.options = Object.keys(colorSet).sort();
+  cutFilters.style.picked = cutFilters.style.picked.filter(function(v) { return cutFilters.style.options.indexOf(v) !== -1; });
+  cutFilters.cat.picked = cutFilters.cat.picked.filter(function(v) { return cutFilters.cat.options.indexOf(v) !== -1; });
+  cutFilters.color.picked = cutFilters.color.picked.filter(function(v) { return cutFilters.color.options.indexOf(v) !== -1; });
+  renderFilterButton('style', 'cut');
+  renderFilterButton('cat', 'cut');
+  renderFilterButton('color', 'cut');
+}
+
+// Populate options for a tab filter based on that tab's data
+function populateTabFilterOptions(tabKey) {
+  var arr;
+  if (tabKey === 'sale') arr = saleData;
+  else if (tabKey === 'stock') arr = stockData;
+  else if (tabKey === 'pending') arr = pendingData;
+  else if (tabKey === 'production') arr = productionData;
+  else if (tabKey === 'inward') arr = inwardData;
+  else if (tabKey === 'master') {
+    // Master: union of all data
+    arr = [].concat(saleData, stockData, pendingData, productionData, inwardData);
+  } else return;
+
+  var styleSet = {}, catSet = {}, colorSet = {};
+  for (var i = 0; i < arr.length; i++) {
+    var r = arr[i];
+    if (r.Item) styleSet[String(r.Item).trim()] = 1;
+    if (r.Category) catSet[String(r.Category).trim()] = 1;
+    if (r['Color Desc']) colorSet[String(r['Color Desc']).trim()] = 1;
+  }
+  var f = tabFilters[tabKey];
+  f.style.options = Object.keys(styleSet).sort();
+  f.cat.options = Object.keys(catSet).sort();
+  f.color.options = Object.keys(colorSet).sort();
+  f.style.picked = f.style.picked.filter(function(v) { return f.style.options.indexOf(v) !== -1; });
+  f.cat.picked = f.cat.picked.filter(function(v) { return f.cat.options.indexOf(v) !== -1; });
+  f.color.picked = f.color.picked.filter(function(v) { return f.color.options.indexOf(v) !== -1; });
+  renderFilterButton('style', tabKey);
+  renderFilterButton('cat', tabKey);
+  renderFilterButton('color', tabKey);
+}
+
+// Apply tab filters to a data array, returns filtered subset
+function applyTabFilters(arr, tabKey) {
+  var f = tabFilters[tabKey];
+  var styleF = f.style.picked.map(function(v){return v.trim().toUpperCase();});
+  var catF = f.cat.picked.map(function(v){return v.trim().toUpperCase();});
+  var colF = f.color.picked.map(function(v){return v.trim().toUpperCase();});
+  if (!styleF.length && !catF.length && !colF.length) return arr;
+  var out = [];
+  for (var i = 0; i < arr.length; i++) {
+    var r = arr[i];
+    if (styleF.length) {
+      var iu = String(r.Item||'').trim().toUpperCase();
+      if (styleF.indexOf(iu) === -1) continue;
+    }
+    if (catF.length) {
+      var cu = String(r.Category||'').trim().toUpperCase();
+      if (catF.indexOf(cu) === -1) continue;
+    }
+    if (colF.length) {
+      var clu = String(r['Color Desc']||'').trim().toUpperCase();
+      if (colF.indexOf(clu) === -1) continue;
+    }
+    out.push(r);
+  }
+  return out;
+}
+
+function clearTabFilters(tabKey) {
+  var f = tabFilters[tabKey];
+  f.style.picked = []; f.cat.picked = []; f.color.picked = [];
+  renderFilterButton('style', tabKey);
+  renderFilterButton('cat', tabKey);
+  renderFilterButton('color', tabKey);
+}
+
+function renderFilterButton(key, context) {
+  context = context || 'cut';
+  var filterSet = context === 'cut' ? cutFilters : tabFilters[context];
+  var f = filterSet[key];
+  var btn = $(f.btnId);
+  if (!btn) return;
+  var placeholderMap = { style: 'All Styles', cat: 'All Categories', color: 'All Colors' };
+  var placeholderText = placeholderMap[key] || 'All';
+  var html = '';
+  if (f.picked.length === 0) {
+    html = '<span class="ms-placeholder">' + placeholderText + '</span>';
+  } else if (f.picked.length <= 2) {
+    for (var i = 0; i < f.picked.length; i++) {
+      html += '<span class="ms-chip">' + esc(f.picked[i]) + '</span>';
+    }
+  } else {
+    html = '<span class="ms-summary">' + f.picked.length + ' selected</span>';
+  }
+  html += '<span class="ms-arrow">▼</span>';
+  btn.innerHTML = html;
+}
+
+function openFilterModal(key, context) {
+  activeFilter = key;
+  activeFilterContext = context || 'cut';
+  var f = getFilterSet()[key];
+  tempPicked = f.picked.slice();
+  tempSearch = '';
+  $('msTitle').textContent = f.label;
+  $('msSearch').value = '';
+  renderModalList();
+  $('msModal').classList.add('show');
+  setTimeout(function() { try { $('msSearch').focus(); } catch(e) {} }, 200);
+}
+
+function closeFilterModal() {
+  $('msModal').classList.remove('show');
+  activeFilter = null;
+}
+
+function applyFilterChanges() {
+  if (!activeFilter) return;
+  var f = getFilterSet();
+  f[activeFilter].picked = tempPicked.slice();
+  renderFilterButton(activeFilter, activeFilterContext);
+  closeFilterModal();
+  // Re-render the table for the current context
+  if (activeFilterContext !== 'cut') {
+    if (activeFilterContext === 'master') generateMasterSheet();
+    else renderDataView(activeFilterContext);
+  }
+}
+
+function getVisibleFilterOptions() {
+  if (!activeFilter) return [];
+  var opts = getFilterSet()[activeFilter].options;
+  if (!tempSearch) return opts;
+  var q = tempSearch.toLowerCase();
+  var out = [];
+  for (var i = 0; i < opts.length; i++) {
+    if (opts[i].toLowerCase().indexOf(q) !== -1) out.push(opts[i]);
+  }
+  return out;
+}
+
+function renderModalList() {
+  if (!activeFilter) return;
+  var vis = getVisibleFilterOptions();
+  var listEl = $('msList');
+  if (vis.length === 0) {
+    listEl.innerHTML = '<div class="modal-empty">No matches</div>';
+  } else {
+    var html = '';
+    for (var i = 0; i < vis.length; i++) {
+      var v = vis[i];
+      var checked = tempPicked.indexOf(v) !== -1;
+      html += '<div class="modal-opt' + (checked?' sel':'') + '" data-v="' + esc(v) + '">';
+      html += '<input type="checkbox"' + (checked?' checked':'') + '>';
+      html += '<span>' + esc(v) + '</span></div>';
+    }
+    listEl.innerHTML = html;
+  }
+  $('msCount').textContent = tempPicked.length + '/' + getFilterSet()[activeFilter].options.length;
+}
+
+function toggleFilterOption(value) {
+  var idx = tempPicked.indexOf(value);
+  if (idx === -1) tempPicked.push(value);
+  else tempPicked.splice(idx, 1);
+  renderModalList();
+}
+
+function clearCutFilters() {
+  cutFilters.style.picked = [];
+  cutFilters.cat.picked = [];
+  cutFilters.color.picked = [];
+  renderFilterButton('style', 'cut');
+  renderFilterButton('cat', 'cut');
+  renderFilterButton('color', 'cut');
+}
+
+// === FABRIC MASTER FUNCTIONS ===
+// Lookup fabric rate for a Style+Color combo
+function getFabricRate(item, color) {
+  if (!fabricData.length) return 0;
+  var key = String(item || '').trim().toUpperCase() + '||' + String(color || '').trim().toUpperCase();
+  for (var i = 0; i < fabricData.length; i++) {
+    var k = String(fabricData[i].Item).trim().toUpperCase() + '||' + String(fabricData[i]['Color Desc'] || '').trim().toUpperCase();
+    if (k === key) return num(fabricData[i].FabricPerPiece);
+  }
+  return 0;
+}
+
+// Add or update a fabric entry (aggregate by Item+Color)
+function addOrUpdateFabric(item, color, rate) {
+  if (!item) return false;
+  var key = item.trim().toUpperCase() + '||' + (color || '').trim().toUpperCase();
+  for (var i = 0; i < fabricData.length; i++) {
+    var k = String(fabricData[i].Item).trim().toUpperCase() + '||' + String(fabricData[i]['Color Desc'] || '').trim().toUpperCase();
+    if (k === key) {
+      fabricData[i].FabricPerPiece = rate;
+      saveFabric();
+      return true;
+    }
+  }
+  fabricData.push({ Item: item.trim(), 'Color Desc': (color || '').trim(), FabricPerPiece: rate });
+  saveFabric();
+  return true;
+}
+
+// Handle fabric Excel upload
+function handleFabricFile(file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { defval: 0 });
+      if (!rows.length) { $('fabricStatus').innerHTML = '<div class="alert alert-err">❌ Empty file</div>'; return; }
+      var cols = Object.keys(rows[0]);
+      if (cols.indexOf('Item') === -1 || cols.indexOf('Color Desc') === -1) {
+        $('fabricStatus').innerHTML = '<div class="alert alert-err">⚠️ Missing columns: Item, Color Desc</div>';
+        return;
+      }
+      // Find fabric column (flexible naming)
+      var fabricCol = null;
+      var candidates = ['Fabric per Piece', 'FabricPerPiece', 'Fabric/Piece', 'Fabric', 'Per Piece'];
+      for (var i = 0; i < candidates.length; i++) {
+        if (cols.indexOf(candidates[i]) !== -1) { fabricCol = candidates[i]; break; }
+      }
+      if (!fabricCol) {
+        $('fabricStatus').innerHTML = '<div class="alert alert-err">⚠️ Missing column: Fabric per Piece</div>';
+        return;
+      }
+      var count = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var item = String(r.Item || '').trim();
+        var color = String(r['Color Desc'] || '').trim();
+        var qty = num(r[fabricCol]);
+        if (!item) continue;
+        addOrUpdateFabric(item, color, qty);
+        count++;
+      }
+      $('fabricStatus').innerHTML = '<div class="alert alert-ok">✓ Loaded ' + count + ' fabric rates.</div>';
+      renderFabricView();
+      $('fabricFile').value = '';
+    } catch(err) {
+      $('fabricStatus').innerHTML = '<div class="alert alert-err">❌ ' + err.message + '</div>';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function downloadFabricSample() {
+  var sample = [
+    {Item:'1001','Color Desc':'Navy Blue','Fabric per Piece':1.5},
+    {Item:'1001','Color Desc':'Red','Fabric per Piece':1.5},
+    {Item:'1002','Color Desc':'White','Fabric per Piece':1.8},
+    {Item:'1003','Color Desc':'Indigo','Fabric per Piece':2.2},
+    {Item:'1004','Color Desc':'Black','Fabric per Piece':2.5}
+  ];
+  var ws = XLSX.utils.json_to_sheet(sample);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Fabric Master');
+  XLSX.writeFile(wb, 'Sample_Fabric_Master.xlsx');
+}
+
+// Auto-fill fabric master with all unique Style+Color from sale data (rate=0, user fills)
+function autoFillFabric() {
+  if (!saleData.length) { alert('Sale data nahi hai. Pehle Sale upload karo.'); return; }
+  var added = 0, skipped = 0;
+  for (var i = 0; i < saleData.length; i++) {
+    var r = saleData[i];
+    var existing = getFabricRate(r.Item, r['Color Desc']);
+    if (existing > 0) { skipped++; continue; }
+    addOrUpdateFabric(r.Item, r['Color Desc'], 0);
+    added++;
+  }
+  $('fabricStatus').innerHTML = '<div class="alert alert-ok">✓ ' + added + ' new entries added (rate=0, please edit). ' + skipped + ' already had rates.</div>';
+  renderFabricView();
+}
+
+// Render fabric data view
+function renderFabricView() {
+  populateTabFilterOptions('fabric');
+
+  var el = $('fabricDataView');
+  if (!el) return;
+
+  // Update unit display
+  $('currentUnit').textContent = settings.fabricUnit || 'meters';
+
+  // Filter fabric data
+  var filtered = fabricData.filter(function(r) {
+    var f = tabFilters.fabric;
+    if (f.style.picked.length) {
+      var iu = String(r.Item || '').trim().toUpperCase();
+      if (f.style.picked.map(function(v){return v.toUpperCase();}).indexOf(iu) === -1) return false;
+    }
+    if (f.color.picked.length) {
+      var cu = String(r['Color Desc'] || '').trim().toUpperCase();
+      if (f.color.picked.map(function(v){return v.toUpperCase();}).indexOf(cu) === -1) return false;
+    }
+    return true;
+  });
+
+  // Re-render filter buttons
+  renderFilterButton('style', 'fabric');
+  renderFilterButton('color', 'fabric');
+
+  if (!fabricData.length) {
+    el.innerHTML = '<div class="empty"><div class="icon">🧵</div><div>No fabric rates yet. Add manually, upload Excel, or click "Auto-fill from existing styles".</div></div>';
+    wireFabricButtons();
+    return;
+  }
+
+  // Calculate total fabric needed (cutting × rate)
+  var unit = settings.fabricUnit || 'meters';
+  var unitLabel = unit === 'kg' ? 'kg' : 'm';
+
+  // Build cutting map: for each Style+Color, sum of all sizes cutting
+  var cuttingMap = {};
+  var plan = calcCuttingPlan();
+  for (var i = 0; i < plan.length; i++) {
+    var p = plan[i];
+    var key = String(p.Style).trim().toUpperCase() + '||' + String(p.Color || '').trim().toUpperCase();
+    if (!cuttingMap[key]) cuttingMap[key] = 0;
+    cuttingMap[key] += p['Cutting Required'];
+  }
+
+  var h = '';
+  // Summary
+  var totalFabric = 0;
+  for (var i = 0; i < filtered.length; i++) {
+    var r = filtered[i];
+    var k = String(r.Item).trim().toUpperCase() + '||' + String(r['Color Desc'] || '').trim().toUpperCase();
+    var cutQty = cuttingMap[k] || 0;
+    totalFabric += cutQty * num(r.FabricPerPiece);
+  }
+
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;margin-top:14px;">';
+  h += '<div class="stat" style="margin:0;flex:1;min-width:140px;"><div class="label">Total Rates</div><div class="value">' + filtered.length + ' / ' + fabricData.length + '</div></div>';
+  h += '<div class="stat green" style="margin:0;flex:1;min-width:180px;"><div class="label">Total Fabric Required</div><div class="value">' + totalFabric.toFixed(2) + ' ' + unitLabel + '</div></div>';
+  h += '</div>';
+
+  // Table
+  h += '<div style="font-weight:500;margin:10px 0 6px;">📋 Fabric Master + Cutting Estimate</div>';
+  h += '<div class="tablewrap"><table><thead><tr><th>#</th><th>Style</th><th>Color</th><th class="num">Fabric/Piece (' + unitLabel + ')</th><th class="num">Cutting Qty</th><th class="num">Total Fabric (' + unitLabel + ')</th><th>Action</th></tr></thead><tbody>';
+  for (var i = 0; i < filtered.length; i++) {
+    var r = filtered[i];
+    var k = String(r.Item).trim().toUpperCase() + '||' + String(r['Color Desc'] || '').trim().toUpperCase();
+    var cutQty = cuttingMap[k] || 0;
+    var totalRow = cutQty * num(r.FabricPerPiece);
+    var origIdx = fabricData.indexOf(r);
+    h += '<tr>';
+    h += '<td>' + (i + 1) + '</td>';
+    h += '<td><b>' + esc(r.Item) + '</b></td>';
+    h += '<td>' + esc(r['Color Desc']) + '</td>';
+    h += '<td class="num">' + num(r.FabricPerPiece).toFixed(2) + '</td>';
+    h += '<td class="num">' + cutQty + '</td>';
+    h += '<td class="num"><b style="color:#10b981;">' + totalRow.toFixed(2) + '</b></td>';
+    h += '<td><button class="btn-del" data-idx="' + origIdx + '" style="background:#fee2e2;color:#991b1b;border:none;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;">🗑️</button></td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+
+  el.innerHTML = h;
+
+  // Delete event delegation
+  var tbody = el.querySelector('tbody');
+  if (tbody) {
+    tbody.onclick = function(e) {
+      var btn = e.target;
+      while (btn && btn !== this && !btn.classList.contains('btn-del')) btn = btn.parentNode;
+      if (btn && btn.classList && btn.classList.contains('btn-del')) {
+        var idx = parseInt(btn.getAttribute('data-idx'));
+        if (confirm('Delete this fabric rate?')) {
+          fabricData.splice(idx, 1);
+          saveFabric();
+          renderFabricView();
+        }
+      }
+    };
+  }
+
+  wireFabricButtons();
+}
+
+function wireFabricButtons() {
+  // Filter buttons
+  var sBtn = $('fabricStyleBtn'), clBtn = $('fabricColorBtn'), cfBtn = $('fabricClearFiltersBtn');
+  if (sBtn) sBtn.onclick = function() { populateTabFilterOptions('fabric'); openFilterModal('style', 'fabric'); };
+  if (clBtn) clBtn.onclick = function() { populateTabFilterOptions('fabric'); openFilterModal('color', 'fabric'); };
+  if (cfBtn) cfBtn.onclick = function() { clearTabFilters('fabric'); renderFabricView(); };
+}
+
+// === CUTTING PLAN CALCULATION ===
+// FORMULA: Cutting = MOQ − Stock + Pending − Production − Part Inward
+function calcCuttingPlan() {
+  if (!saleData.length) return [];
+
+  // Build lookup maps for all data sources
+  function buildMap(arr) {
+    var m = {};
+    for (var i = 0; i < arr.length; i++) {
+      var r = arr[i];
+      var k = String(r.Item).trim().toUpperCase() + '||' + String(r['Color Desc'] || '').trim().toUpperCase();
+      m[k] = r;
+    }
+    return m;
+  }
+  var stockMap = buildMap(stockData);
+  var pendingMap = buildMap(pendingData);
+  var productionMap = buildMap(productionData);
+  var inwardMap = buildMap(inwardData);
+
+  var moqDays = settings.moqDays || 45;
+  var salesPeriod = settings.salesPeriod || 30;
+  var minRepeat = settings.minRepeatQty || 6;
+  var minCut = settings.minCutQty || 0;
+
+  var output = [];
+
+  // Get filter sets (uppercase for comparison)
+  var styleFilter = cutFilters.style.picked.map(function(v) { return v.trim().toUpperCase(); });
+  var catFilter = cutFilters.cat.picked.map(function(v) { return v.trim().toUpperCase(); });
+  var colorFilter = cutFilters.color.picked.map(function(v) { return v.trim().toUpperCase(); });
+
+  for (var i = 0; i < saleData.length; i++) {
+    var sale = saleData[i];
+
+    // Apply Style filter
+    if (styleFilter.length > 0) {
+      var itemUpper = String(sale.Item || '').trim().toUpperCase();
+      if (styleFilter.indexOf(itemUpper) === -1) continue;
+    }
+    // Apply Category filter
+    if (catFilter.length > 0) {
+      var catUpper = String(sale.Category || '').trim().toUpperCase();
+      if (catFilter.indexOf(catUpper) === -1) continue;
+    }
+    // Apply Color filter
+    if (colorFilter.length > 0) {
+      var colUpper = String(sale['Color Desc'] || '').trim().toUpperCase();
+      if (colorFilter.indexOf(colUpper) === -1) continue;
+    }
+
+    var key = String(sale.Item).trim().toUpperCase() + '||' + String(sale['Color Desc'] || '').trim().toUpperCase();
+    var stockRow = stockMap[key] || null;
+    var pendingRow = pendingMap[key] || null;
+    var productionRow = productionMap[key] || null;
+    var inwardRow = inwardMap[key] || null;
+
+    for (var s = 0; s < SIZES.length; s++) {
+      var sz = SIZES[s];
+      var sold = num(sale[sz]);
+
+      // Repeat-sales filter
+      if (sold < minRepeat) continue;
+
+      var dailySale = sold / salesPeriod;
+      var moqNeed = Math.ceil(dailySale * moqDays);
+
+      var currentStock = stockRow ? num(stockRow[sz]) : 0;
+      var pending = pendingRow ? num(pendingRow[sz]) : 0;
+      var production = productionRow ? num(productionRow[sz]) : 0;
+      var inward = inwardRow ? num(inwardRow[sz]) : 0;
+
+      // FORMULA: Cutting = MOQ − Stock + Pending − Production − Part Inward
+      var cuttingQty = moqNeed - currentStock + pending - production - inward;
+      if (cuttingQty < 0) cuttingQty = 0;
+      cuttingQty = Math.ceil(cuttingQty);
+
+      if (cuttingQty < minCut) continue;
+      if (cuttingQty === 0) continue;
+
+      var row = {
+        Style: sale.Item,
+        Color: sale['Color Desc'],
+        Category: sale.Category || 'Uncategorized',
+        Size: sz,
+        'Sold (Period)': sold,
+        'Daily Sale': dailySale.toFixed(2),
+        'MOQ Need': moqNeed,
+        'Current Stock': currentStock,
+        'Pending': pending,
+        'Production': production,
+        'Part Inward': inward,
+        'Cutting Required': cuttingQty
+      };
+      output.push(row);
+    }
+  }
+
+  // Sort: Item, Color, Size order
+  var sizeOrder = {};
+  for (var s = 0; s < SIZES.length; s++) sizeOrder[SIZES[s]] = s;
+  output.sort(function(a, b) {
+    if (a.Style !== b.Style) return String(a.Style).localeCompare(String(b.Style));
+    if (a.Color !== b.Color) return a.Color.localeCompare(b.Color);
+    return (sizeOrder[a.Size] || 99) - (sizeOrder[b.Size] || 99);
+  });
+
+  return output;
+}
+
+function generateCuttingPlan() {
+  if (!saleData.length) { $('cuttingSummary').innerHTML = '<div class="alert alert-err">❌ No Sale data. Upload it first.</div>'; $('cuttingTable').innerHTML = ''; return; }
+  // Stock and Pending can be empty (treated as 0)
+  var noStock = !stockData.length;
+  var noPending = !pendingData.length;
+
+  var plan = calcCuttingPlan();
+  if (!plan.length) {
+    $('cuttingSummary').innerHTML = '<div class="alert alert-info">ℹ️ No cutting needed. Either all stock is sufficient, or all sizes are below minimum repeat threshold (' + settings.minRepeatQty + '). Adjust in Settings if needed.</div>';
+    $('cuttingTable').innerHTML = '';
+    return;
+  }
+
+  var totalRows = plan.length;
+  var totalQty = 0;
+  var totalFabric = 0;
+  var itemSet = {}, colorSet = {};
+  var hasFabric = fabricData.length > 0;
+  var unit = settings.fabricUnit || 'meters';
+  var unitLabel = unit === 'kg' ? 'kg' : 'm';
+
+  for (var i = 0; i < plan.length; i++) {
+    totalQty += plan[i]['Cutting Required'];
+    itemSet[plan[i].Style] = 1;
+    colorSet[plan[i].Style + '||' + plan[i].Color] = 1;
+    if (hasFabric) {
+      var rate = getFabricRate(plan[i].Style, plan[i].Color);
+      plan[i]['Fabric per Piece'] = rate;
+      plan[i]['Total Fabric (' + unitLabel + ')'] = +(plan[i]['Cutting Required'] * rate).toFixed(2);
+      totalFabric += plan[i]['Cutting Required'] * rate;
+    }
+  }
+
+  var warnings = '';
+  if (noStock) warnings += '<div class="alert alert-warn">⚠️ Stock data not uploaded — treated as 0 stock.</div>';
+  if (noPending) warnings += '<div class="alert alert-warn">⚠️ Pending Orders not uploaded — treated as 0 pending.</div>';
+  if (!hasFabric) warnings += '<div class="alert alert-info">ℹ️ Fabric Master empty — fabric column not shown. Add fabric rates in 🧵 Fabric Master tab.</div>';
+
+  var statsHTML = '<div class="stats">' +
+      '<div class="stat"><div class="label">📋 Total Lines</div><div class="value">' + totalRows + '</div></div>' +
+      '<div class="stat blue"><div class="label">🎨 Styles</div><div class="value">' + Object.keys(itemSet).length + '</div></div>' +
+      '<div class="stat purple"><div class="label">🎨 Style-Colors</div><div class="value">' + Object.keys(colorSet).length + '</div></div>' +
+      '<div class="stat green"><div class="label">✂️ Total Cutting Qty</div><div class="value">' + totalQty.toLocaleString() + '</div></div>';
+  if (hasFabric) {
+    statsHTML += '<div class="stat" style="background:#fef3c7;"><div class="label">🧵 Total Fabric</div><div class="value">' + totalFabric.toFixed(2) + ' ' + unitLabel + '</div></div>';
+  }
+  statsHTML += '</div>';
+
+  $('cuttingSummary').innerHTML = warnings + '<div class="alert alert-ok">✓ Cutting plan generated. Target: <b>' + settings.moqDays + ' days</b> stock based on <b>' + settings.salesPeriod + '-day</b> sales.</div>' + statsHTML;
+
+  var h = '<div style="font-weight:500;margin:12px 0 6px;">📋 Cutting Order — Size-wise (Flat Rows)</div>';
+  h += '<p style="font-size:11px;color:#64748b;margin-bottom:8px;">Only sizes with ≥' + settings.minRepeatQty + ' pieces sold are included. Each size = separate row.</p>';
+
+  // Filter pills
+  var pillsHTML = '';
+  if (cutFilters.style.picked.length || cutFilters.cat.picked.length || cutFilters.color.picked.length) {
+    pillsHTML = '<div style="margin-bottom:8px;font-size:12px;">Filters: ';
+    if (cutFilters.style.picked.length) pillsHTML += '<span style="background:#fee2e2;padding:2px 8px;border-radius:10px;margin-right:4px;">🎨 ' + cutFilters.style.picked.length + ' style(s)</span>';
+    if (cutFilters.cat.picked.length) pillsHTML += '<span style="background:#fee2e2;padding:2px 8px;border-radius:10px;margin-right:4px;">📂 ' + cutFilters.cat.picked.join(', ') + '</span>';
+    if (cutFilters.color.picked.length) pillsHTML += '<span style="background:#fee2e2;padding:2px 8px;border-radius:10px;margin-right:4px;">🌈 ' + cutFilters.color.picked.join(', ') + '</span>';
+    pillsHTML += '</div>';
+  }
+  h += pillsHTML;
+
+  h += '<div class="tablewrap"><table><thead><tr><th>Style</th><th>Category</th><th>Color</th><th>Size</th><th class="num">Sold</th><th class="num">Daily</th><th class="num">MOQ Need</th><th class="num">Stock</th><th class="num">Pending</th><th class="num">Production</th><th class="num">Part Inward</th><th class="num">Cutting</th>';
+  if (hasFabric) h += '<th class="num">Fab/Pc (' + unitLabel + ')</th><th class="num">Total Fab</th>';
+  h += '</tr></thead><tbody>';
+  for (var i = 0; i < plan.length; i++) {
+    var p = plan[i];
+    h += '<tr>' +
+      '<td><b>' + esc(p.Style) + '</b></td>' +
+      '<td>' + esc(p.Category) + '</td>' +
+      '<td>' + esc(p.Color) + '</td>' +
+      '<td><b style="color:#dc2626;">' + p.Size + '</b></td>' +
+      '<td class="num">' + p['Sold (Period)'] + '</td>' +
+      '<td class="num">' + p['Daily Sale'] + '</td>' +
+      '<td class="num">' + p['MOQ Need'] + '</td>' +
+      '<td class="num">' + p['Current Stock'] + '</td>' +
+      '<td class="num">' + p['Pending'] + '</td>' +
+      '<td class="num">' + p['Production'] + '</td>' +
+      '<td class="num">' + p['Part Inward'] + '</td>' +
+      '<td class="num"><b style="color:#dc2626;font-size:14px;">' + p['Cutting Required'] + '</b></td>';
+    if (hasFabric) {
+      h += '<td class="num">' + num(p['Fabric per Piece']).toFixed(2) + '</td>';
+      h += '<td class="num"><b style="color:#10b981;">' + num(p['Total Fabric (' + unitLabel + ')']).toFixed(2) + '</b></td>';
+    }
+    h += '</tr>';
+  }
+  $('cuttingTable').innerHTML = h + '</tbody></table></div>';
+}
+
+function exportCutting() {
+  if (!saleData.length) { alert('Upload Sale data first.'); return; }
+  var plan = calcCuttingPlan();
+  if (!plan.length) { alert('No cutting needed based on current data and settings.'); return; }
+  // Enrich with fabric if available
+  if (fabricData.length) {
+    var unit = settings.fabricUnit || 'meters';
+    var unitLabel = unit === 'kg' ? 'kg' : 'm';
+    for (var i = 0; i < plan.length; i++) {
+      var rate = getFabricRate(plan[i].Style, plan[i].Color);
+      plan[i]['Fabric per Piece (' + unitLabel + ')'] = rate;
+      plan[i]['Total Fabric (' + unitLabel + ')'] = +(plan[i]['Cutting Required'] * rate).toFixed(2);
+    }
+  }
+  var ws = XLSX.utils.json_to_sheet(plan);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cutting Order');
+  XLSX.writeFile(wb, 'Cutting_Order_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+// === MASTER SHEET: All Style+Color+Size with full picture ===
+function calcMasterSheet() {
+  function buildMap(arr) {
+    var m = {};
+    for (var i = 0; i < arr.length; i++) {
+      var r = arr[i];
+      var k = String(r.Item).trim().toUpperCase() + '||' + String(r['Color Desc'] || '').trim().toUpperCase();
+      m[k] = r;
+    }
+    return m;
+  }
+  var saleMap = buildMap(saleData);
+  var stockMap = buildMap(stockData);
+  var pendingMap = buildMap(pendingData);
+  var productionMap = buildMap(productionData);
+  var inwardMap = buildMap(inwardData);
+
+  var allCombos = {};
+  function collect(arr) {
+    for (var i = 0; i < arr.length; i++) {
+      var r = arr[i];
+      var k = String(r.Item).trim().toUpperCase() + '||' + String(r['Color Desc'] || '').trim().toUpperCase();
+      if (!allCombos[k]) allCombos[k] = { Style: r.Item, Color: r['Color Desc'], Category: r.Category || 'Uncategorized' };
+    }
+  }
+  collect(saleData); collect(stockData); collect(pendingData); collect(productionData); collect(inwardData);
+
+  var moqDays = settings.moqDays || 45;
+  var salesPeriod = settings.salesPeriod || 30;
+
+  // Get master filters
+  var mf = tabFilters.master;
+  var styleF = mf.style.picked.map(function(v){return v.trim().toUpperCase();});
+  var catF = mf.cat.picked.map(function(v){return v.trim().toUpperCase();});
+  var colF = mf.color.picked.map(function(v){return v.trim().toUpperCase();});
+
+  var output = [];
+
+  for (var key in allCombos) {
+    var combo = allCombos[key];
+
+    // Apply filters
+    if (styleF.length && styleF.indexOf(String(combo.Style||'').trim().toUpperCase()) === -1) continue;
+    if (catF.length && catF.indexOf(String(combo.Category||'').trim().toUpperCase()) === -1) continue;
+    if (colF.length && colF.indexOf(String(combo.Color||'').trim().toUpperCase()) === -1) continue;
+
+    var saleRow = saleMap[key];
+    var stockRow = stockMap[key];
+    var pendingRow = pendingMap[key];
+    var productionRow = productionMap[key];
+    var inwardRow = inwardMap[key];
+
+    for (var s = 0; s < SIZES.length; s++) {
+      var sz = SIZES[s];
+      var sold = saleRow ? num(saleRow[sz]) : 0;
+      var stock = stockRow ? num(stockRow[sz]) : 0;
+      var pending = pendingRow ? num(pendingRow[sz]) : 0;
+      var production = productionRow ? num(productionRow[sz]) : 0;
+      var inward = inwardRow ? num(inwardRow[sz]) : 0;
+
+      if (sold + stock + pending + production + inward === 0) continue;
+
+      var dailySale = sold / salesPeriod;
+      var moqNeed = Math.ceil(dailySale * moqDays);
+
+      // FORMULA: Cutting = MOQ − Stock + Pending − Production − Part Inward
+      var cuttingQty = moqNeed - stock + pending - production - inward;
+      if (cuttingQty < 0) cuttingQty = 0;
+      cuttingQty = Math.ceil(cuttingQty);
+
+      output.push({
+        Style: combo.Style,
+        Category: combo.Category,
+        Color: combo.Color,
+        Size: sz,
+        'Sold (Period)': sold,
+        'Daily Sale': dailySale.toFixed(2),
+        'MOQ Need': moqNeed,
+        'Stock': stock,
+        'Pending': pending,
+        'Production': production,
+        'Part Inward': inward,
+        'Cutting': cuttingQty
+      });
+    }
+  }
+
+  var sizeOrder = {};
+  for (var s = 0; s < SIZES.length; s++) sizeOrder[SIZES[s]] = s;
+  output.sort(function(a, b) {
+    if (a.Style !== b.Style) return String(a.Style).localeCompare(String(b.Style));
+    if (a.Color !== b.Color) return a.Color.localeCompare(b.Color);
+    return (sizeOrder[a.Size] || 99) - (sizeOrder[b.Size] || 99);
+  });
+
+  return output;
+}
+
+function generateMasterSheet() {
+  // Always populate filter options
+  populateTabFilterOptions('master');
+  renderFilterButton('style', 'master');
+  renderFilterButton('cat', 'master');
+  renderFilterButton('color', 'master');
+
+  // Wire up master filter buttons
+  var msStyle = $('masterStyleBtn'), msCat = $('masterCatBtn'), msCol = $('masterColorBtn'), msClear = $('masterClearFiltersBtn');
+  if (msStyle) msStyle.onclick = function() { populateTabFilterOptions('master'); openFilterModal('style', 'master'); };
+  if (msCat) msCat.onclick = function() { populateTabFilterOptions('master'); openFilterModal('cat', 'master'); };
+  if (msCol) msCol.onclick = function() { populateTabFilterOptions('master'); openFilterModal('color', 'master'); };
+  if (msClear) msClear.onclick = function() { clearTabFilters('master'); generateMasterSheet(); };
+
+  var data = calcMasterSheet();
+  if (!data.length) {
+    $('masterSummary').innerHTML = '<div class="alert alert-info">📭 No data yet (or filters too restrictive). Upload at least one of Sale/Stock/Pending/Production/Inward.</div>';
+    $('masterTable').innerHTML = '';
+    return;
+  }
+
+  // Summary
+  var totalCutting = 0;
+  var totalFabric = 0;
+  var styleSet = {}, comboSet = {};
+  var hasFabric = fabricData.length > 0;
+  var unit = settings.fabricUnit || 'meters';
+  var unitLabel = unit === 'kg' ? 'kg' : 'm';
+
+  for (var i = 0; i < data.length; i++) {
+    totalCutting += data[i].Cutting;
+    styleSet[data[i].Style] = 1;
+    comboSet[data[i].Style + '||' + data[i].Color] = 1;
+    if (hasFabric) {
+      var rate = getFabricRate(data[i].Style, data[i].Color);
+      data[i].FabricRate = rate;
+      data[i].RowFabric = +(data[i].Cutting * rate).toFixed(2);
+      totalFabric += data[i].Cutting * rate;
+    }
+  }
+
+  var statsHTML = '<div class="stats">' +
+      '<div class="stat"><div class="label">📋 Total Rows</div><div class="value">' + data.length + '</div></div>' +
+      '<div class="stat blue"><div class="label">🎨 Styles</div><div class="value">' + Object.keys(styleSet).length + '</div></div>' +
+      '<div class="stat purple"><div class="label">🌈 Style-Colors</div><div class="value">' + Object.keys(comboSet).length + '</div></div>' +
+      '<div class="stat green"><div class="label">✂️ Total Cutting</div><div class="value">' + totalCutting.toLocaleString() + '</div></div>';
+  if (hasFabric) {
+    statsHTML += '<div class="stat" style="background:#fef3c7;"><div class="label">🧵 Total Fabric</div><div class="value">' + totalFabric.toFixed(2) + ' ' + unitLabel + '</div></div>';
+  }
+  statsHTML += '</div>';
+
+  $('masterSummary').innerHTML = '<div class="alert alert-ok">✓ Master sheet generated. <b>' + data.length + '</b> rows across <b>' + Object.keys(styleSet).length + '</b> styles, <b>' + Object.keys(comboSet).length + '</b> style-colors.</div>' + statsHTML;
+
+  // Table
+  var h = '<div style="font-weight:500;margin:12px 0 6px;">📋 Master Sheet — All Style + Color + Size</div>';
+  h += '<p style="font-size:11px;color:#64748b;margin-bottom:8px;">Formula: Cutting = MOQ − Stock + Pending − Production − Part Inward</p>';
+  h += '<div class="tablewrap"><table><thead><tr><th>Style</th><th>Category</th><th>Color</th><th>Size</th><th class="num">Sold</th><th class="num">Daily</th><th class="num">MOQ Need</th><th class="num">Stock</th><th class="num">Pending</th><th class="num">Production</th><th class="num">Part Inward</th><th class="num">Cutting</th>';
+  if (hasFabric) h += '<th class="num">Fab/Pc (' + unitLabel + ')</th><th class="num">Total Fab</th>';
+  h += '</tr></thead><tbody>';
+  for (var i = 0; i < data.length; i++) {
+    var p = data[i];
+    var cutColor = p.Cutting > 0 ? '#dc2626' : '#10b981';
+    h += '<tr>' +
+      '<td><b>' + esc(p.Style) + '</b></td>' +
+      '<td>' + esc(p.Category) + '</td>' +
+      '<td>' + esc(p.Color) + '</td>' +
+      '<td><b style="color:#dc2626;">' + p.Size + '</b></td>' +
+      '<td class="num">' + p['Sold (Period)'] + '</td>' +
+      '<td class="num">' + p['Daily Sale'] + '</td>' +
+      '<td class="num">' + p['MOQ Need'] + '</td>' +
+      '<td class="num">' + p.Stock + '</td>' +
+      '<td class="num">' + p.Pending + '</td>' +
+      '<td class="num">' + p.Production + '</td>' +
+      '<td class="num">' + p['Part Inward'] + '</td>' +
+      '<td class="num"><b style="color:' + cutColor + ';font-size:14px;">' + p.Cutting + '</b></td>';
+    if (hasFabric) {
+      h += '<td class="num">' + num(p.FabricRate).toFixed(2) + '</td>';
+      h += '<td class="num"><b style="color:#10b981;">' + num(p.RowFabric).toFixed(2) + '</b></td>';
+    }
+    h += '</tr>';
+  }
+  $('masterTable').innerHTML = h + '</tbody></table></div>';
+}
+
+function exportMasterSheet() {
+  var data = calcMasterSheet();
+  if (!data.length) { alert('No data'); return; }
+  // Enrich with fabric if available
+  if (fabricData.length) {
+    var unit = settings.fabricUnit || 'meters';
+    var unitLabel = unit === 'kg' ? 'kg' : 'm';
+    for (var i = 0; i < data.length; i++) {
+      var rate = getFabricRate(data[i].Style, data[i].Color);
+      data[i]['Fabric per Piece (' + unitLabel + ')'] = rate;
+      data[i]['Total Fabric (' + unitLabel + ')'] = +(data[i].Cutting * rate).toFixed(2);
+    }
+  }
+  var ws = XLSX.utils.json_to_sheet(data);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Master Sheet');
+  XLSX.writeFile(wb, 'Master_Sheet_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+// === OVERVIEW ===
+function renderOverview() {
+  $('overviewStats').innerHTML =
+    '<div class="stat"><div class="label">📥 Sale</div><div class="value">' + saleData.length + '</div><div style="margin-top:4px;"><span class="status-badge ' + (saleData.length ? 'status-loaded' : 'status-empty') + '">' + (saleData.length ? 'LOADED' : 'EMPTY') + '</span></div></div>' +
+    '<div class="stat orange"><div class="label">📦 Stock</div><div class="value">' + stockData.length + '</div><div style="margin-top:4px;"><span class="status-badge ' + (stockData.length ? 'status-loaded' : 'status-empty') + '">' + (stockData.length ? 'LOADED' : 'EMPTY') + '</span></div></div>' +
+    '<div class="stat blue"><div class="label">📋 Pending</div><div class="value">' + pendingData.length + '</div><div style="margin-top:4px;"><span class="status-badge ' + (pendingData.length ? 'status-loaded' : 'status-empty') + '">' + (pendingData.length ? 'LOADED' : 'EMPTY') + '</span></div></div>' +
+    '<div class="stat purple"><div class="label">🏭 Production</div><div class="value">' + productionData.length + '</div><div style="margin-top:4px;"><span class="status-badge ' + (productionData.length ? 'status-loaded' : 'status-empty') + '">' + (productionData.length ? 'LOADED' : 'EMPTY') + '</span></div></div>' +
+    '<div class="stat green"><div class="label">📥 Part Inward</div><div class="value">' + inwardData.length + '</div><div style="margin-top:4px;"><span class="status-badge ' + (inwardData.length ? 'status-loaded' : 'status-empty') + '">' + (inwardData.length ? 'LOADED' : 'EMPTY') + '</span></div></div>' +
+    '<div class="stat"><div class="label">🧵 Fabric Rates</div><div class="value">' + fabricData.length + '</div><div style="margin-top:4px;"><span class="status-badge ' + (fabricData.length ? 'status-loaded' : 'status-empty') + '">' + (fabricData.length ? 'LOADED' : 'EMPTY') + '</span></div></div>' +
+    '<div class="stat"><div class="label">📅 MOQ Days</div><div class="value">' + settings.moqDays + '</div></div>';
+
+  var msg = '';
+  if (!saleData.length) msg = '<div class="alert alert-info">📭 Start by uploading Sale Data.</div>';
+  else msg = '<div class="alert alert-ok">✅ Sale data loaded. Optional: upload Stock, Pending, Production, Inward for accurate cutting.</div>';
+  $('overviewMsg').innerHTML = msg;
+
+  var readyEl = $('cuttingReady');
+  if (readyEl) {
+    if (!saleData.length) {
+      readyEl.innerHTML = '<div class="alert alert-warn">⚠️ Upload Sale data first.</div>';
+    } else {
+      var bits = [];
+      bits.push('Sale: ' + saleData.length);
+      bits.push('Stock: ' + (stockData.length || '0 (empty)'));
+      bits.push('Pending: ' + (pendingData.length || '0 (empty)'));
+      bits.push('Production: ' + (productionData.length || '0 (empty)'));
+      bits.push('Part Inward: ' + (inwardData.length || '0 (empty)'));
+      readyEl.innerHTML = '<div class="alert alert-ok">✓ Ready: ' + bits.join(' | ') + '</div>';
+    }
+  }
+}
+
+// === TABS ===
+function switchTab(name) {
+  var btns = document.querySelectorAll('.nav button');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+  ['overview','sale','stock','pending','production','inward','fabric','master','cutting','settings'].forEach(function(p) {
+    var el = $('page-' + p);
+    if (el) el.style.display = (p === name) ? 'block' : 'none';
+  });
+  var btn = document.querySelector('.nav button[data-tab="' + name + '"]');
+  if (btn) btn.classList.add('active');
+  if (name === 'overview') renderOverview();
+  if (name === 'sale') renderDataView('sale');
+  if (name === 'stock') renderDataView('stock');
+  if (name === 'pending') renderDataView('pending');
+  if (name === 'production') renderDataView('production');
+  if (name === 'inward') renderDataView('inward');
+  if (name === 'fabric') renderFabricView();
+  if (name === 'master') generateMasterSheet();
+  if (name === 'cutting') { renderOverview(); populateFilterOptions(); }
+  if (name === 'settings') loadSettingsUI();
+}
+
+// === SETTINGS ===
+function loadSettingsUI() {
+  if ($('setMoqDays')) $('setMoqDays').value = settings.moqDays;
+  if ($('setSalesPeriod')) $('setSalesPeriod').value = settings.salesPeriod;
+  if ($('setMinRepeat')) $('setMinRepeat').value = settings.minRepeatQty;
+  if ($('setMinCut')) $('setMinCut').value = settings.minCutQty;
+}
+function applySettingsFromUI() {
+  settings.moqDays = parseInt($('setMoqDays').value) || 45;
+  settings.salesPeriod = parseInt($('setSalesPeriod').value) || 30;
+  settings.minRepeatQty = parseInt($('setMinRepeat').value) || 6;
+  settings.minCutQty = parseInt($('setMinCut').value) || 0;
+  saveSet();
+  $('setStatus').innerHTML = '<div class="alert alert-ok">✓ Saved</div>';
+  setTimeout(function() { $('setStatus').innerHTML = ''; }, 2000);
+}
+function resetSettings() {
+  settings = { moqDays: 45, salesPeriod: 30, minRepeatQty: 6, minCutQty: 0, fabricUnit: 'meters' };
+  saveSet();
+  loadSettingsUI();
+  $('setStatus').innerHTML = '<div class="alert alert-info">↩️ Reset</div>';
+  setTimeout(function() { $('setStatus').innerHTML = ''; }, 2000);
+}
+
+// === INIT ===
+function init() {
+  loadAll();
+
+  // Nav
+  var navBtns = document.querySelectorAll('.nav button');
+  for (var i = 0; i < navBtns.length; i++) {
+    (function(b) { b.onclick = function() { switchTab(b.getAttribute('data-tab')); }; })(navBtns[i]);
+  }
+
+  // === SALE TAB ===
+  $('saleUpload').onclick = function() { $('saleFile').click(); };
+  $('saleFile').onchange = function(e) { if (e.target.files[0]) handleFile(e.target.files[0], 'sale'); };
+  $('saleSampleBtn').onclick = downloadSaleSample;
+  $('saleClearBtn').onclick = function() {
+    if (confirm('Delete Sale data?')) {
+      saleData = []; saveSale();
+      $('saleStatus').innerHTML = '<div class="alert alert-ok">✓ Cleared.</div>';
+      renderDataView('sale');
+    }
+  };
+
+  // === STOCK TAB ===
+  $('stockUpload').onclick = function() { $('stockFile').click(); };
+  $('stockFile').onchange = function(e) { if (e.target.files[0]) handleFile(e.target.files[0], 'stock'); };
+  $('stockSampleBtn').onclick = downloadStockSample;
+  $('stockClearBtn').onclick = function() {
+    if (confirm('Delete Stock data?')) {
+      stockData = []; saveStock();
+      $('stockStatus').innerHTML = '<div class="alert alert-ok">✓ Cleared.</div>';
+      renderDataView('stock');
+    }
+  };
+
+  // === PENDING TAB ===
+  $('pendingUpload').onclick = function() { $('pendingFile').click(); };
+  $('pendingFile').onchange = function(e) { if (e.target.files[0]) handleFile(e.target.files[0], 'pending'); };
+  $('pendingSampleBtn').onclick = downloadPendingSample;
+  $('pendingClearBtn').onclick = function() {
+    if (confirm('Delete Pending data?')) {
+      pendingData = []; savePending();
+      $('pendingStatus').innerHTML = '<div class="alert alert-ok">✓ Cleared.</div>';
+      renderDataView('pending');
+    }
+  };
+
+  // === PRODUCTION TAB ===
+  $('productionUpload').onclick = function() { $('productionFile').click(); };
+  $('productionFile').onchange = function(e) { if (e.target.files[0]) handleFile(e.target.files[0], 'production'); };
+  $('productionSampleBtn').onclick = downloadProductionSample;
+  $('productionClearBtn').onclick = function() {
+    if (confirm('Delete Production data?')) {
+      productionData = []; saveProduction();
+      $('productionStatus').innerHTML = '<div class="alert alert-ok">✓ Cleared.</div>';
+      renderDataView('production');
+    }
+  };
+
+  // === PART INWARD TAB ===
+  $('inwardUpload').onclick = function() { $('inwardFile').click(); };
+  $('inwardFile').onchange = function(e) { if (e.target.files[0]) handleFile(e.target.files[0], 'inward'); };
+  $('inwardSampleBtn').onclick = downloadInwardSample;
+  $('inwardClearBtn').onclick = function() {
+    if (confirm('Delete Part Inward data?')) {
+      inwardData = []; saveInward();
+      $('inwardStatus').innerHTML = '<div class="alert alert-ok">✓ Cleared.</div>';
+      renderDataView('inward');
+    }
+  };
+
+  // === FABRIC MASTER TAB ===
+  $('unitMeterBtn').onclick = function() {
+    settings.fabricUnit = 'meters';
+    saveSet();
+    renderFabricView();
+  };
+  $('unitKgBtn').onclick = function() {
+    settings.fabricUnit = 'kg';
+    saveSet();
+    renderFabricView();
+  };
+  $('fabricUploadBtn').onclick = function() { $('fabricFile').click(); };
+  $('fabricFile').onchange = function(e) { if (e.target.files[0]) handleFabricFile(e.target.files[0]); };
+  $('fabricSampleBtn').onclick = downloadFabricSample;
+  $('fabricClearBtn').onclick = function() {
+    if (confirm('Delete ALL fabric rates?')) {
+      fabricData = []; saveFabric();
+      $('fabricStatus').innerHTML = '<div class="alert alert-ok">✓ Cleared.</div>';
+      renderFabricView();
+    }
+  };
+  $('fabricAddBtn').onclick = function() {
+    var item = ($('fabricEntryItem').value || '').trim();
+    var color = ($('fabricEntryColor').value || '').trim();
+    var qty = num($('fabricEntryQty').value);
+    if (!item) { alert('Style (Item) zaroori hai'); return; }
+    if (qty <= 0) { alert('Fabric per piece > 0 hona chahiye'); return; }
+    addOrUpdateFabric(item, color, qty);
+    $('fabricEntryItem').value = '';
+    $('fabricEntryColor').value = '';
+    $('fabricEntryQty').value = '';
+    $('fabricStatus').innerHTML = '<div class="alert alert-ok">✓ ' + item + ' ' + color + ' = ' + qty + '</div>';
+    renderFabricView();
+  };
+  $('fabricAutoFillBtn').onclick = autoFillFabric;
+
+  // === MASTER SHEET BUTTONS ===
+  $('generateMasterBtn').onclick = generateMasterSheet;
+  $('exportMasterBtn').onclick = exportMasterSheet;
+
+  // Cutting
+  $('generateBtn').onclick = generateCuttingPlan;
+  $('exportBtn').onclick = exportCutting;
+  $('clearFiltersBtn').onclick = function() { clearCutFilters(); $('cuttingSummary').innerHTML = ''; $('cuttingTable').innerHTML = ''; };
+
+  // Filter buttons
+  $('cutStyleBtn').onclick = function() { populateFilterOptions(); openFilterModal('style'); };
+  $('cutCatBtn').onclick = function() { populateFilterOptions(); openFilterModal('cat'); };
+  $('cutColorBtn').onclick = function() { populateFilterOptions(); openFilterModal('color'); };
+
+  // Modal handlers
+  $('msClose').onclick = closeFilterModal;
+  $('msCancel').onclick = closeFilterModal;
+  $('msDone').onclick = applyFilterChanges;
+  $('msModal').onclick = function(e) { if (e.target === this) closeFilterModal(); };
+  $('msSearch').oninput = function(e) { tempSearch = e.target.value; renderModalList(); };
+  $('msSelectAll').onclick = function() {
+    var vis = getVisibleFilterOptions();
+    for (var i = 0; i < vis.length; i++) if (tempPicked.indexOf(vis[i]) === -1) tempPicked.push(vis[i]);
+    renderModalList();
+  };
+  $('msClearAll').onclick = function() { tempPicked = []; renderModalList(); };
+  $('msList').onclick = function(e) {
+    var opt = e.target;
+    while (opt && opt !== this && !opt.classList.contains('modal-opt')) opt = opt.parentNode;
+    if (opt && opt.classList.contains('modal-opt')) {
+      toggleFilterOption(opt.getAttribute('data-v'));
+    }
+  };
+
+  // Settings
+  $('saveSetBtn').onclick = applySettingsFromUI;
+  $('resetSetBtn').onclick = resetSettings;
+
+  loadSettingsUI();
+  renderOverview();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
